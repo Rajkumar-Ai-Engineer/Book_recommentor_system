@@ -1,0 +1,191 @@
+version: '1.0'
+description: Data schema for Book Recommendation System
+datasets:
+- name: Books
+  file: Books.csv
+  description: Book catalog with metadata including title, author, publisher, and
+    publication year
+  rows: 271360
+  columns:
+    ISBN:
+      dtype: str
+      non_null_count: 271360
+      null_count: 0
+      null_percentage: 0.0
+      unique_values: 271360
+    Book-Title:
+      dtype: str
+      non_null_count: 271360
+      null_count: 0
+      null_percentage: 0.0
+      unique_values: 242135
+    Book-Author:
+      dtype: str
+      non_null_count: 271358
+      null_count: 2
+      null_percentage: 0.0
+      unique_values: 102022
+    Year-Of-Publication:
+      dtype: str
+      non_null_count: 271360
+      null_count: 0
+      null_percentage: 0.0
+      unique_values: 118
+    Publisher:
+      dtype: str
+      non_null_count: 271358
+      null_count: 2
+      null_percentage: 0.0
+      unique_values: 16807
+    Image-URL-S:
+      dtype: str
+      non_null_count: 271360
+      null_count: 0
+      null_percentage: 0.0
+      unique_values: 271044
+    Image-URL-M:
+      dtype: str
+      non_null_count: 271360
+      null_count: 0
+      null_percentage: 0.0
+      unique_values: 271044
+    Image-URL-L:
+      dtype: str
+      non_null_count: 271357
+      null_count: 3
+      null_percentage: 0.0
+      unique_values: 271041
+- name: Ratings
+  file: Ratings.csv
+  description: User ratings for books with user ID, ISBN, and rating score
+  rows: 1149780
+  columns:
+    User-ID:
+      dtype: int64
+      non_null_count: 1149780
+      null_count: 0
+      null_percentage: 0.0
+      unique_values: 105283
+    ISBN:
+      dtype: str
+      non_null_count: 1149780
+      null_count: 0
+      null_percentage: 0.0
+      unique_values: 340556
+    Book-Rating:
+      dtype: int64
+      non_null_count: 1149780
+      null_count: 0
+      null_percentage: 0.0
+      unique_values: 11
+data_quality:
+  books:
+    total_records: 271360
+    missing_values:
+      ISBN: 0
+      Book-Title: 0
+      Book-Author: 2
+      Year-Of-Publication: 0
+      Publisher: 2
+      Image-URL-S: 0
+      Image-URL-M: 0
+      Image-URL-L: 3
+    duplicate_records: 0
+  ratings:
+    total_records: 1149780
+    missing_values:
+      User-ID: 0
+      ISBN: 0
+      Book-Rating: 0
+    duplicate_records: 0
+    rating_range:
+      min: 0
+      max: 10
+drop_ratings_column:
+  description: Columns to drop from Ratings dataset
+  reason: No unnecessary columns identified in Ratings.csv - all columns are essential
+    for recommendations
+  columns: None
+drop_books_column:
+  description: Columns to drop from Books dataset
+  reason: Image URLs are not useful for content-based or collaborative filtering recommendations
+  columns:
+    Image-URL-S: Low resolution image URL - not useful for recommendations
+    Image-URL-M: Medium resolution image URL - not useful for recommendations
+    Image-URL-L: Large resolution image URL - not useful for recommendations
+  unnecessary_stuffs:
+    Image-URL-S:
+      reason: Low resolution image URLs add storage overhead without improving recommendation
+        quality
+      impact: Reduces dataset size by ~5-10%
+      recommendation: Drop from production pipeline
+    Image-URL-M:
+      reason: Medium resolution image URLs not used in recommendation algorithms
+      impact: Reduces dataset size by ~5-10%
+      recommendation: Drop from production pipeline
+    Image-URL-L:
+      reason: Large resolution image URLs not used in recommendation algorithms
+      impact: Reduces dataset size by ~5-10%
+      recommendation: Drop from production pipeline
+keep_columns:
+  books:
+    ISBN: Primary key for book identification
+    Book-Title: Essential for content-based filtering and user interface
+    Book-Author: Critical for content-based similarity and user preferences
+    Year-Of-Publication: Useful for temporal analysis and book metadata
+    Publisher: Optional but useful for content-based filtering
+  ratings:
+    User-ID: Primary key for user identification
+    ISBN: Foreign key linking to Books dataset
+    Book-Rating: Target variable for collaborative filtering and model training
+relationships:
+  primary_key_books: ISBN
+  primary_key_ratings:
+  - User-ID
+  - ISBN
+  foreign_key:
+    ratings.ISBN: books.ISBN
+recommendations:
+  data_preprocessing:
+  - Remove Image-URL-S, Image-URL-M, Image-URL-L columns
+  - Handle missing values in Book-Author and Publisher (only 2-3 records)
+  - Validate ISBN format consistency
+  - Remove duplicate ratings if any
+  feature_engineering:
+  - Create TF-IDF vectors from Book-Title and Book-Author
+  - Normalize rating scores to 0-1 range
+  - Create user-item interaction matrix
+  - Extract publication decade from Year-Of-Publication
+  data_split:
+    train: 80% of ratings
+    validation: 10% of ratings
+    test: 10% of ratings
+
+
+ratings_columns:
+  - User-ID
+  - ISBN
+  - Book-Rating
+
+books_columns:
+  - ISBN
+  - Book-Title
+  - Book-Author
+  - Year-Of-Publication
+  - Publisher
+
+numerical_ratings_columns:
+  - User-ID
+  - Book-Rating
+
+numerical_books_columns:
+  - Year-Of-Publication
+
+categorical_ratings_columns:
+  - ISBN
+
+categorical_books_columns:
+  - ISBN
+  - Book-Title
+  - Book-Author
+  - Publisher

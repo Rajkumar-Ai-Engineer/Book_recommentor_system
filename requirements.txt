@@ -1,0 +1,13 @@
+scikit-learn
+pandas
+numpy
+matplotlib
+seaborn
+ipykernel
+pymongo
+structlog
+certifi
+python-dotenv
+PyYAML
+mlflow
+pytest

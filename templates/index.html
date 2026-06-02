@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovelMind AI - Hybrid Book Recommendations</title>
+    <meta name="description" content="Explore an interactive, AI-powered hybrid collaborative-content book recommendation engine.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'Outfit', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            dark: '#030712', // deep slate-950
+                            surface: '#0f172a', // slate-900
+                            primary: '#6366f1', // neon indigo
+                            accent: '#10b981', // emerald green
+                            neonPurple: '#a855f7', // purple
+                        }
+                    },
+                    boxShadow: {
+                        'neon-indigo': '0 0 20px rgba(99, 102, 241, 0.25)',
+                        'neon-accent': '0 0 20px rgba(16, 185, 129, 0.25)',
+                        'neon-purple': '0 0 25px rgba(168, 85, 247, 0.35)',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Custom CSS for specialized glassmorphism, glowing animations and Immersive Drift effect -->
+    <style>
+        body {
+            background-color: #030712;
+            overflow-x: hidden;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        /* Glassmorphic Utilities */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        
+        .glass-input {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .glass-input:focus {
+            border-color: rgba(99, 102, 241, 0.6);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.25);
+            outline: none;
+        }
+
+        /* Soft neon ambient background glows */
+        .ambient-glow-1 {
+            position: absolute;
+            top: 10%;
+            left: 15%;
+            width: 450px;
+            height: 450px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0) 70%);
+            pointer-events: none;
+            filter: blur(50px);
+            z-index: 0;
+        }
+
+        .ambient-glow-2 {
+            position: absolute;
+            bottom: 15%;
+            right: 10%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, rgba(168, 85, 247, 0) 70%);
+            pointer-events: none;
+            filter: blur(60px);
+            z-index: 0;
+        }
+
+        /* Immersive floating animation keyframes */
+        @keyframes floatDrift {
+            0% {
+                transform: translateY(0px) rotate(0deg);
+            }
+            50% {
+                transform: translateY(var(--float-height, -10px)) rotate(var(--float-rotate, 1deg));
+            }
+            100% {
+                transform: translateY(0px) rotate(0deg);
+            }
+        }
+
+        /* Float classes applied when Immersive Flow mode is toggled */
+        .immersive-active .float-card {
+            animation: floatDrift var(--float-duration, 6s) ease-in-out infinite;
+            animation-delay: var(--float-delay, 0s);
+        }
+
+        /* Glow transitions */
+        .hover-glow:hover {
+            border-color: rgba(99, 102, 241, 0.5);
+            box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.35);
+            transform: translateY(-8px) scale(1.02);
+        }
+
+        /* Hide scrollbars but keep functionality */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen relative selection:bg-indigo-500/30 selection:text-indigo-200">
+    
+    <!-- Background Canvas and Glows -->
+    <canvas id="space-canvas" class="absolute inset-0 pointer-events-none z-0"></canvas>
+    <div class="ambient-glow-1"></div>
+    <div class="ambient-glow-2"></div>
+
+    <!-- Page Header & Navbar -->
+    <header class="w-full relative z-10 border-b border-slate-900/80 bg-slate-950/40 backdrop-blur-md">
+        <div class="max-width-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+            <!-- Brand Logo -->
+            <div class="flex items-center gap-2.5">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-primary to-brand-neonPurple flex items-center justify-center shadow-neon-indigo">
+                    <i data-lucide="book-open" class="w-5.5 h-5.5 text-white animate-pulse" style="animation-duration: 3s;"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold font-display bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent">NovelMind AI</h1>
+                    <p class="text-xs text-indigo-400/80 font-medium tracking-widest uppercase">Book Intelligence</p>
+                </div>
+            </div>
+
+            <!-- Model Info Badges -->
+            <div class="flex items-center gap-3 bg-slate-900/60 border border-slate-800/80 px-4 py-2 rounded-2xl text-xs backdrop-blur-md">
+                <div class="flex items-center gap-1.5 border-r border-slate-800 pr-3">
+                    <span class="w-2 h-2 rounded-full {% if is_mock %}bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.5)]{% else %}bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]{% endif %}"></span>
+                    <span class="text-slate-400 font-semibold">Engine:</span>
+                    <span class="text-white font-medium">{{ model_info.status }}</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <i data-lucide="database" class="w-3.5 h-3.5 text-indigo-400"></i>
+                    <span class="text-slate-400">Library:</span>
+                    <span class="text-white font-medium">{{ model_info.total_books }} books</span>
+                </div>
+            </div>
+
+            <!-- Immersive Flow Toggle Switch -->
+            <div class="flex items-center gap-3 bg-slate-900/50 border border-slate-800/50 px-4 py-2 rounded-2xl">
+                <span class="text-sm font-semibold tracking-wide text-slate-300 flex items-center gap-1.5 select-none">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-brand-accent"></i> Immersive Flow
+                </span>
+                <button id="immersive-toggle" class="w-12 h-6.5 rounded-full bg-slate-800 border border-slate-700/60 p-0.5 relative transition-all duration-300 focus:outline-none" aria-label="Toggle Immersive Flow Mode">
+                    <div class="w-5 h-5 rounded-full bg-slate-500 absolute top-0.5 left-0.5 transition-all duration-300 shadow-md transform flex items-center justify-center text-[10px] text-white font-bold select-none" id="toggle-knob"></div>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-6 py-12 relative z-10 flex flex-col items-center justify-center">
+        
+        <!-- Hero Section -->
+        <section class="text-center max-w-3xl mx-auto mb-14 mt-4 select-none">
+            <span class="px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-semibold text-indigo-300 tracking-wider uppercase mb-5 inline-block shadow-inner">
+                🔮 Collaborative & Content Hybrid AI
+            </span>
+            <h2 class="text-4xl md:text-6xl font-extrabold tracking-tight font-display text-white leading-tight">
+                Next-Gen Hybrid<br>
+                <span class="bg-gradient-to-r from-brand-primary via-purple-400 to-brand-accent bg-clip-text text-transparent">Book Recommendations</span>
+            </h2>
+            <p class="mt-4 text-slate-400 text-base md:text-lg leading-relaxed max-w-2xl mx-auto">
+                Break free from generic bestseller lists. Input a book you love, and let our advanced machine learning models map your literary preferences to discover your next favorite read.
+            </p>
+        </section>
+
+        <!-- Dynamic Search Section -->
+        <section class="w-full max-w-2xl mx-auto mb-16 relative">
+            <div class="glass-panel rounded-3xl p-6 shadow-neon-indigo relative z-20">
+                <form id="recommend-form" class="relative flex flex-col md:flex-row gap-3">
+                    <div class="relative flex-1">
+                        <i data-lucide="search" class="w-5.5 h-5.5 text-slate-500 absolute left-4.5 top-1/2 -translate-y-1/2"></i>
+                        <input 
+                            type="text" 
+                            id="search-input" 
+                            name="book_name"
+                            autocomplete="off"
+                            placeholder="Enter a book you love (e.g. Harry Potter, Dune, 1984)..." 
+                            class="w-full pl-12.5 pr-5 py-4 rounded-2xl text-slate-200 glass-input text-base placeholder:text-slate-500 font-medium"
+                        >
+                        <!-- Clear Search Button -->
+                        <button type="button" id="clear-btn" class="hidden absolute right-4 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300 focus:outline-none">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <button 
+                        type="submit" 
+                        class="px-8 py-4 bg-gradient-to-r from-brand-primary to-brand-neonPurple hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-2xl shadow-neon-purple hover:shadow-[0_0_30px_rgba(168,85,247,0.55)] active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
+                    >
+                        <i data-lucide="wand2" class="w-5 h-5 animate-pulse"></i>
+                        <span>Discover</span>
+                    </button>
+                </form>
+
+                <!-- Search Autosuggestions Box -->
+                <div id="suggestions-box" class="hidden absolute left-0 right-0 mt-3 glass-panel rounded-2xl border border-slate-800 shadow-2xl z-30 max-h-60 overflow-y-auto no-scrollbar py-2">
+                    <!-- Suggestions rendered here dynamically -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Selected Book Profile Panel -->
+        <section id="selected-profile" class="w-full max-w-4xl mx-auto mb-10 hidden transition-all duration-500 transform scale-95 opacity-0">
+            <div class="glass-panel border-indigo-500/20 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center gap-6 md:gap-10">
+                <div class="w-32 h-44 shrink-0 shadow-2xl relative" id="selected-cover-container">
+                    <!-- Dynamic cover rendered here -->
+                </div>
+                <div class="flex-1 text-center md:text-left">
+                    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-primary/10 border border-brand-primary/20 text-xs font-semibold text-brand-primary mb-3">
+                        <i data-lucide="book-open" class="w-3.5 h-3.5"></i> Selected Coordinates
+                    </div>
+                    <h3 class="text-2xl md:text-3xl font-extrabold text-white font-display mb-1" id="selected-title">Book Title</h3>
+                    <p class="text-slate-400 text-sm md:text-base font-semibold mb-4" id="selected-author">by Author Name</p>
+                    <div class="flex flex-wrap justify-center md:justify-start gap-2.5">
+                        <span class="text-xs px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 font-semibold text-slate-300 flex items-center gap-1.5">
+                            <i data-lucide="hash" class="w-3.5 h-3.5 text-indigo-400"></i> <span id="selected-isbn">ISBN: N/A</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recommendations Title Header -->
+        <section id="results-header" class="w-full max-w-7xl mx-auto mb-8 hidden transition-all duration-500 opacity-0">
+            <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                <div class="flex items-center gap-2.5">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-brand-accent animate-pulse"></i>
+                    <h3 class="text-lg md:text-xl font-bold font-display tracking-wide text-slate-200">Personalized AI Matches</h3>
+                </div>
+                <span class="text-xs text-slate-400 font-semibold bg-slate-900/60 px-3 py-1.5 rounded-xl border border-slate-850" id="results-count">Showing 0 matching profiles</span>
+            </div>
+        </section>
+
+        <!-- Results Grid & Skeletons -->
+        <section class="w-full max-w-7xl mx-auto">
+            <!-- Loading Skeleton Grid -->
+            <div id="loading-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 hidden">
+                <!-- 6 Floating Skeletons -->
+                <script>
+                    for(let i=0; i<6; i++) {
+                        document.write(`
+                            <div class="glass-panel border-slate-800/60 rounded-3xl p-5 h-[230px] flex gap-5 animate-pulse relative overflow-hidden">
+                                <div class="w-24 h-full rounded-2xl bg-slate-800/60 shrink-0"></div>
+                                <div class="flex-1 py-1 flex flex-col justify-between">
+                                    <div>
+                                        <div class="h-4 bg-slate-800/60 rounded-lg w-11/12 mb-2.5"></div>
+                                        <div class="h-3.5 bg-slate-800/60 rounded-lg w-7/12 mb-4"></div>
+                                        <div class="h-5 bg-slate-800/60 rounded-lg w-9/12"></div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <div class="h-6 bg-slate-800/60 rounded-lg w-12"></div>
+                                        <div class="h-6 bg-slate-800/60 rounded-lg w-16"></div>
+                                    </div>
+                                </div>
+                                <div class="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-slate-800/10 to-transparent animate-[shimmer_1.5s_infinite]" style="animation-name: shimmer; animation-duration: 1.5s; animation-iteration-count: infinite;"></div>
+                            </div>
+                        `);
+                    }
+                </script>
+            </div>
+
+            <!-- Active Book Recommendations Grid -->
+            <div id="recommendations-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 transition-all duration-300">
+                <!-- Recommendation Cards dynamically appended here -->
+            </div>
+            
+            <!-- Empty state presentation -->
+            <div id="empty-state" class="w-full py-16 px-6 text-center select-none">
+                <div class="w-20 h-20 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto mb-6 text-indigo-400 shadow-inner">
+                    <i data-lucide="compass" class="w-10 h-10 animate-bounce"></i>
+                </div>
+                <h4 class="text-xl font-bold font-display text-slate-300">Awaiting Book Input</h4>
+                <p class="text-slate-500 max-w-md mx-auto mt-2 text-sm">
+                    Enter the name of a book you love above to map your preferences and discover personalized recommendations.
+                </p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Global Floating Toast Notification System -->
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3.5 max-w-sm pointer-events-none">
+        <!-- Error / Warning toasts appended here -->
+    </div>
+
+    <!-- Background Canvas Particles Script -->
+    <script>
+        const canvas = document.getElementById('space-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let particles = [];
+        const maxParticles = 65;
+
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.size = Math.random() * 1.8 + 0.5;
+                this.speedX = Math.random() * 0.25 - 0.125;
+                this.speedY = Math.random() * 0.25 - 0.125;
+                this.color = Math.random() > 0.4 ? 'rgba(99, 102, 241, ' + (Math.random() * 0.4 + 0.1) + ')' : 'rgba(16, 185, 129, ' + (Math.random() * 0.3 + 0.1) + ')';
+            }
+
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+
+                if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = this.size * 2;
+                ctx.shadowColor = this.color;
+                ctx.fill();
+                ctx.shadowBlur = 0; // reset
+            }
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            initParticles();
+        }
+
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < maxParticles; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw connections
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw();
+
+                for (let j = i + 1; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < 120) {
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.strokeStyle = `rgba(99, 102, 241, ${(1 - dist/120) * 0.08})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    }
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        animate();
+    </script>
+
+    <!-- Main Client Handler Script -->
+    <script>
+        // DOM Nodes
+        const searchInput = document.getElementById('search-input');
+        const clearBtn = document.getElementById('clear-btn');
+        const searchForm = document.getElementById('recommend-form');
+        const suggestionsBox = document.getElementById('suggestions-box');
+        
+        const selectedProfile = document.getElementById('selected-profile');
+        const selectedCoverContainer = document.getElementById('selected-cover-container');
+        const selectedTitle = document.getElementById('selected-title');
+        const selectedAuthor = document.getElementById('selected-author');
+        const selectedIsbn = document.getElementById('selected-isbn');
+        
+        const resultsHeader = document.getElementById('results-header');
+        const resultsCount = document.getElementById('results-count');
+        const recommendationsGrid = document.getElementById('recommendations-grid');
+        const loadingGrid = document.getElementById('loading-grid');
+        const emptyState = document.getElementById('empty-state');
+        
+        const immersiveToggle = document.getElementById('immersive-toggle');
+        const toggleKnob = document.getElementById('toggle-knob');
+        const toastContainer = document.getElementById('toast-container');
+        
+        let isImmersive = false;
+        let suggestionFocusIdx = -1;
+
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // 1. Toast Notification Trigger
+        function showToast(message, type = 'error') {
+            const toast = document.createElement('div');
+            toast.className = `pointer-events-auto flex items-start gap-3.5 p-4 rounded-2xl glass-panel border-red-500/20 shadow-2xl transition-all duration-350 translate-y-8 opacity-0 max-w-sm`;
+            
+            const icon = type === 'error' ? 'alert-circle' : 'info';
+            const colorClass = type === 'error' ? 'text-red-400' : 'text-indigo-400';
+            const glowClass = type === 'error' ? 'shadow-[0_0_15px_rgba(239,68,68,0.2)] border-red-500/15' : 'shadow-[0_0_15px_rgba(99,102,241,0.2)] border-brand-primary/15';
+
+            toast.classList.add(...glowClass.split(' '));
+
+            toast.innerHTML = `
+                <div class="${colorClass} shrink-0 mt-0.5">
+                    <i data-lucide="${icon}" class="w-5.5 h-5.5"></i>
+                </div>
+                <div class="flex-1">
+                    <h5 class="text-sm font-bold text-white">${type === 'error' ? 'Recommendation Inference Error' : 'System Notice'}</h5>
+                    <p class="text-xs text-slate-400 leading-relaxed mt-1">${message}</p>
+                </div>
+                <button class="text-slate-500 hover:text-slate-300 p-0.5" onclick="this.parentElement.remove()">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            `;
+            
+            toastContainer.appendChild(toast);
+            lucide.createIcons({ props: { class: 'w-4 h-4' } });
+            
+            // Animation triggers
+            setTimeout(() => {
+                toast.classList.remove('translate-y-8', 'opacity-0');
+            }, 50);
+
+            // Self-destruct after 4.5 seconds
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-[-10px]');
+                setTimeout(() => toast.remove(), 400);
+            }, 4500);
+        }
+
+        // 2. Generate Beautiful Gradient Hardcover Placeholder (SVG mockup)
+        function createBookCoverFallback(title, author, containerId, size = 'medium') {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            // Generate clean styling parameters based on title name
+            let hash = 0;
+            for (let i = 0; i < title.length; i++) {
+                hash = title.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue1 = Math.abs(hash % 360);
+            const hue2 = (hue1 + 140) % 360;
+
+            const bgGradient = `linear-gradient(135deg, hsl(${hue1}, 75%, 25%) 0%, hsl(${hue2}, 80%, 15%) 100%)`;
+            const shadowAccent = `0 10px 25px -5px hsl(${hue1}, 50%, 10%)`;
+
+            const fontTitleSize = size === 'large' ? 'text-sm' : 'text-xs';
+            const fontAuthorSize = size === 'large' ? 'text-[10px]' : 'text-[9px]';
+
+            container.style.background = bgGradient;
+            container.style.boxShadow = shadowAccent;
+            container.className = `w-full h-full rounded-xl flex flex-col justify-between p-3.5 border border-white/10 relative overflow-hidden select-none`;
+
+            // Dynamic Cover graphics
+            container.innerHTML = `
+                <!-- Book Spine spine element -->
+                <div class="absolute left-0 top-0 bottom-0 w-2.5 bg-black/20 border-r border-white/5"></div>
+                <!-- Abstract floating orb element on background -->
+                <div class="absolute -right-6 -top-6 w-16 h-16 rounded-full bg-white/5 filter blur-md"></div>
+                
+                <!-- Title layout -->
+                <div class="pl-2.5 z-10 flex flex-col gap-1.5">
+                    <i data-lucide="book" class="w-4 h-4 text-white/40"></i>
+                    <h5 class="${fontTitleSize} font-bold text-white leading-snug tracking-wide line-clamp-3">${title}</h5>
+                </div>
+
+                <!-- Author layout -->
+                <div class="pl-2.5 z-10">
+                    <div class="w-5 h-0.5 bg-brand-accent/50 mb-2"></div>
+                    <p class="${fontAuthorSize} font-bold text-slate-300/90 tracking-wide uppercase truncate">${author}</p>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        // 3. Immersive toggle logic
+        immersiveToggle.addEventListener('click', () => {
+            isImmersive = !isImmersive;
+            
+            if (isImmersive) {
+                // Activate physical floating state
+                recommendationsGrid.classList.add('immersive-active');
+                
+                // Toggle Button styling
+                immersiveToggle.classList.remove('bg-slate-800', 'border-slate-700/60');
+                immersiveToggle.classList.add('bg-brand-accent/10', 'border-brand-accent/40');
+                toggleKnob.classList.remove('bg-slate-500', 'left-0.5');
+                toggleKnob.classList.add('bg-brand-accent', 'left-[22px]', 'shadow-neon-accent');
+                
+                // Card variables setup for organic desynchronized movement
+                const cards = recommendationsGrid.querySelectorAll('.float-card');
+                cards.forEach((card, idx) => {
+                    card.style.setProperty('--float-delay', `${(idx * 0.45).toFixed(2)}s`);
+                    card.style.setProperty('--float-duration', `${(5.5 + Math.random() * 3).toFixed(2)}s`);
+                    card.style.setProperty('--float-height', `-${10 + Math.random() * 8}px`);
+                    card.style.setProperty('--float-rotate', `${(Math.random() * 2 - 1).toFixed(2)}deg`);
+                });
+            } else {
+                // Deactivate floating
+                recommendationsGrid.classList.remove('immersive-active');
+                
+                // Toggle Button styling
+                immersiveToggle.classList.add('bg-slate-800', 'border-slate-700/60');
+                immersiveToggle.classList.remove('bg-brand-accent/10', 'border-brand-accent/40');
+                toggleKnob.classList.add('bg-slate-500', 'left-0.5');
+                toggleKnob.classList.remove('bg-brand-accent', 'left-[22px]', 'shadow-neon-accent');
+                
+                const cards = recommendationsGrid.querySelectorAll('.float-card');
+                cards.forEach(card => {
+                    card.style.removeProperty('--float-delay');
+                    card.style.removeProperty('--float-duration');
+                    card.style.removeProperty('--float-height');
+                    card.style.removeProperty('--float-rotate');
+                });
+            }
+        });
+
+        // 4. Suggestion Handling & Input controls
+        searchInput.addEventListener('input', async (e) => {
+            const val = e.target.value.trim();
+            suggestionFocusIdx = -1;
+
+            if (val.length > 0) {
+                clearBtn.classList.remove('hidden');
+            } else {
+                clearBtn.classList.add('hidden');
+            }
+
+            if (val.length < 2) {
+                suggestionsBox.classList.add('hidden');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/suggestions?q=${encodeURIComponent(val)}`);
+                const data = await res.json();
+
+                if (data && data.length > 0) {
+                    suggestionsBox.innerHTML = '';
+                    data.forEach((title, idx) => {
+                        const item = document.createElement('button');
+                        item.type = 'button';
+                        item.className = 'w-full text-left px-5 py-2.5 text-sm font-semibold hover:bg-indigo-500/10 hover:text-brand-primary border-b border-white/5 last:border-0 transition-colors flex items-center gap-2.5 text-slate-300';
+                        item.innerHTML = `<i data-lucide="book" class="w-4 h-4 shrink-0 text-slate-500"></i><span class="truncate">${title}</span>`;
+                        
+                        item.addEventListener('click', () => {
+                            searchInput.value = title;
+                            suggestionsBox.classList.add('hidden');
+                            searchForm.dispatchEvent(new Event('submit'));
+                        });
+                        suggestionsBox.appendChild(item);
+                    });
+                    suggestionsBox.classList.remove('hidden');
+                    lucide.createIcons();
+                } else {
+                    suggestionsBox.classList.add('hidden');
+                }
+            } catch (err) {
+                console.error("Suggestions fail:", err);
+            }
+        });
+
+        // Clear button trigger
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            clearBtn.classList.add('hidden');
+            suggestionsBox.classList.add('hidden');
+            searchInput.focus();
+        });
+
+        // Keyboard accessibility inside suggestion box
+        searchInput.addEventListener('keydown', (e) => {
+            const items = suggestionsBox.querySelectorAll('button');
+            if (suggestionsBox.classList.contains('hidden') || items.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                suggestionFocusIdx = (suggestionFocusIdx + 1) % items.length;
+                updateFocus(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                suggestionFocusIdx = (suggestionFocusIdx - 1 + items.length) % items.length;
+                updateFocus(items);
+            } else if (e.key === 'Enter' && suggestionFocusIdx >= 0) {
+                e.preventDefault();
+                items[suggestionFocusIdx].click();
+            } else if (e.key === 'Escape') {
+                suggestionsBox.classList.add('hidden');
+            }
+        });
+
+        function updateFocus(items) {
+            items.forEach((item, idx) => {
+                if (idx === suggestionFocusIdx) {
+                    item.classList.add('bg-indigo-500/15', 'text-brand-primary');
+                    item.focus();
+                } else {
+                    item.classList.remove('bg-indigo-500/15', 'text-brand-primary');
+                }
+            });
+            searchInput.focus();
+        }
+
+        // Hide overlay suggestion boxes when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!searchForm.contains(e.target) && !suggestionsBox.contains(e.target)) {
+                suggestionsBox.classList.add('hidden');
+            }
+        });
+
+        // 5. Submit Search Form and Draw Orbit Recommendations
+        searchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = searchInput.value.trim();
+
+            if (!query) {
+                showToast("Please input a book title to initiate discovery.", "error");
+                return;
+            }
+
+            suggestionsBox.classList.add('hidden');
+
+            // Show skeleton load state and hide profile, empty states
+            emptyState.classList.add('hidden');
+            recommendationsGrid.classList.add('hidden');
+            loadingGrid.classList.remove('hidden');
+
+            selectedProfile.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => selectedProfile.classList.add('hidden'), 350);
+
+            resultsHeader.classList.add('opacity-0');
+            setTimeout(() => resultsHeader.classList.add('hidden'), 350);
+
+            try {
+                // Post search call to API
+                const formData = new FormData();
+                formData.append('book_name', query);
+
+                const response = await fetch('/recommend', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || "Discovering recommendations failed.");
+                }
+
+                // Complete load process
+                loadingGrid.classList.add('hidden');
+                recommendationsGrid.innerHTML = '';
+
+                // Populate Selected Book Profile
+                selectedTitle.innerText = data.selected_book.title;
+                selectedAuthor.innerText = `by ${data.selected_book.author}`;
+                selectedIsbn.innerHTML = `ISBN: ${data.selected_book.isbn}`;
+                
+                selectedCoverContainer.innerHTML = '';
+                const mainCoverImg = document.createElement('img');
+                mainCoverImg.src = `https://covers.openlibrary.org/b/isbn/${data.selected_book.isbn}-M.jpg`;
+                mainCoverImg.className = 'w-full h-full object-cover rounded-xl border border-white/10 shadow-xl';
+                mainCoverImg.id = 'sel-cover-img';
+                
+                selectedCoverContainer.appendChild(mainCoverImg);
+                
+                // Fallback validation for main cover image
+                mainCoverImg.onerror = () => {
+                    createBookCoverFallback(data.selected_book.title, data.selected_book.author, 'selected-cover-container', 'large');
+                };
+                
+                // Double validation checking if cover returns a 1x1 white/empty pixel
+                mainCoverImg.onload = function() {
+                    if (this.naturalWidth <= 1) {
+                        createBookCoverFallback(data.selected_book.title, data.selected_book.author, 'selected-cover-container', 'large');
+                    }
+                };
+
+                // Display selected profile with smooth transitions
+                selectedProfile.classList.remove('hidden');
+                setTimeout(() => {
+                    selectedProfile.classList.remove('scale-95', 'opacity-0');
+                }, 100);
+
+                // Populate Recommendations Grid
+                const recs = data.recommendations;
+                resultsCount.innerText = `Showing ${recs.length} matching profiles`;
+                
+                resultsHeader.classList.remove('hidden');
+                setTimeout(() => resultsHeader.classList.remove('opacity-0'), 150);
+
+                recs.forEach((rec, idx) => {
+                    const card = document.createElement('div');
+                    card.className = 'glass-panel rounded-3xl p-5 hover-glow float-card transition-all duration-500 ease-out flex gap-4 h-[230px] border border-white/5 relative z-10 hover:z-20';
+                    
+                    const coverContainerId = `cover-rec-${idx}`;
+                    const sourceTag = rec.source === 'collaborative' ? 'Collab ML' : 'Content ML';
+                    const tagTheme = rec.source === 'collaborative' 
+                        ? 'bg-purple-500/10 border-purple-500/20 text-purple-300' 
+                        : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300';
+                    
+                    // Assign premium metadata tags based on keywords or index
+                    let customTags = ["Classic", "Bestseller"];
+                    if (rec.title.toLowerCase().includes('potter')) {
+                        customTags = ["Magic", "Fantasy"];
+                    } else if (rec.title.toLowerCase().includes('dune') || rec.title.toLowerCase().includes('hobbit') || rec.title.toLowerCase().includes('lord')) {
+                        customTags = ["Epic", "Sci-Fi"];
+                    } else if (rec.title.toLowerCase().includes('1984') || rec.title.toLowerCase().includes('animal')) {
+                        customTags = ["Political", "Classic"];
+                    } else {
+                        const defaultPool = [["Highly Rated", "Must Read"], ["Bestseller", "Award-Winner"], ["Mind-Bending", "Classic"], ["Page-Turner", "Trending"]];
+                        customTags = defaultPool[idx % defaultPool.length];
+                    }
+
+                    card.innerHTML = `
+                        <!-- Cover Container -->
+                        <div class="w-24 h-full shrink-0 shadow-lg relative rounded-xl overflow-hidden bg-slate-900 border border-white/5" id="${coverContainerId}">
+                            <img 
+                                src="https://covers.openlibrary.org/b/isbn/${rec.isbn}-M.jpg" 
+                                alt="${rec.title}" 
+                                class="w-full h-full object-cover"
+                                onload="if(this.naturalWidth <= 1) { createBookCoverFallback('${rec.title.replace(/'/g, "\\'")}', '${rec.author.replace(/'/g, "\\'")}', '${coverContainerId}', 'medium') }"
+                                onerror="createBookCoverFallback('${rec.title.replace(/'/g, "\\'")}', '${rec.author.replace(/'/g, "\\'")}', '${coverContainerId}', 'medium')"
+                            >
+                        </div>
+                        
+                        <!-- Details and Metrics -->
+                        <div class="flex-1 py-1 flex flex-col justify-between">
+                            <div>
+                                <!-- Top Badges -->
+                                <div class="flex justify-between items-start gap-1.5 mb-2.5">
+                                    <span class="px-2 py-0.5 rounded-lg border text-[10px] font-extrabold tracking-wider uppercase select-none ${tagTheme}">
+                                        ${sourceTag}
+                                    </span>
+                                    <span class="text-xs font-extrabold text-brand-accent tracking-wide flex items-center gap-0.5 shrink-0 select-none">
+                                        <i data-lucide="sparkles" class="w-3.5 h-3.5 animate-pulse"></i> ${rec.match_score}% Match
+                                    </span>
+                                </div>
+                                
+                                <h4 class="text-sm font-bold text-white leading-tight font-display tracking-wide line-clamp-2" title="${rec.title}">
+                                    ${rec.title}
+                                </h4>
+                                <p class="text-xs font-semibold text-slate-400 mt-1 truncate" title="${rec.author}">
+                                    by ${rec.author}
+                                </p>
+                            </div>
+                            
+                            <!-- Tags and Discover details -->
+                            <div class="flex flex-wrap gap-1.5 mt-2">
+                                <span class="px-2 py-1 rounded-lg bg-slate-900/60 border border-slate-800 text-[10px] font-bold text-slate-400 select-none">${customTags[0]}</span>
+                                <span class="px-2 py-1 rounded-lg bg-slate-900/60 border border-slate-800 text-[10px] font-bold text-slate-400 select-none">${customTags[1]}</span>
+                            </div>
+                        </div>
+                    `;
+                    
+                    recommendationsGrid.appendChild(card);
+                });
+
+                recommendationsGrid.classList.remove('hidden');
+
+                // Trigger desynchronized float assignments if Immersive Flow is active
+                if (isImmersive) {
+                    recommendationsGrid.classList.remove('immersive-active');
+                    setTimeout(() => {
+                        recommendationsGrid.classList.add('immersive-active');
+                        const cards = recommendationsGrid.querySelectorAll('.float-card');
+                        cards.forEach((card, idx) => {
+                            card.style.setProperty('--float-delay', `${(idx * 0.45).toFixed(2)}s`);
+                            card.style.setProperty('--float-duration', `${(5.5 + Math.random() * 3).toFixed(2)}s`);
+                            card.style.setProperty('--float-height', `-${10 + Math.random() * 8}px`);
+                            card.style.setProperty('--float-rotate', `${(Math.random() * 2 - 1).toFixed(2)}deg`);
+                        });
+                    }, 50);
+                }
+
+                lucide.createIcons();
+
+            } catch (err) {
+                console.error("Error drawing coordinates:", err);
+                loadingGrid.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                showToast(err.message || "An unexpected error occurred during inference.", "error");
+            }
+        });
+    </script>
+</body>
+</html>
