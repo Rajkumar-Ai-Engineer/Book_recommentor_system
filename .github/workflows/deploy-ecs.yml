@@ -1,0 +1,320 @@
+name: CI/CD to ECS Fargate - Book Recommendation System
+
+on:
+  workflow_run:
+    workflows: ["CI"] # Must match the "name" field in ci.yml if you have one
+    branches:
+      - main
+      - production
+    types:
+      - completed
+  workflow_call:
+  push:
+    branches:
+      - main
+      - production
+    paths:
+      - 'src/**'
+      - 'main.py'
+      - 'Dockerfile'
+      - 'requirements.txt'
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: book-recommendation-system
+  ECS_SERVICE: book-recommendation-system
+  ECS_CLUSTER: ml-platform-prod
+  ECS_TASK_DEFINITION: .aws/task-definition.json
+  CONTAINER_NAME: book-recommendation-app
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  check-status:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    steps:
+      - name: CI passed, proceeding to deployment
+        run: echo "CI passed, proceeding to build and deploy Book Recommendation System."
+
+  # -------------------------------
+  # 1. Build & Push Docker Image
+  # -------------------------------
+  build-and-push:
+    name: Build & Push Docker Image
+    needs: [check-status]
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create ECR Repository if it doesn't exist
+        run: |
+          aws ecr describe-repositories --repository-names $ECR_REPOSITORY || \
+          aws ecr create-repository --repository-name $ECR_REPOSITORY --image-scanning-configuration scanOnPush=true
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker Image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "Building Docker image: $IMAGE_URI"
+          
+          # Build Docker image
+          docker build -t $IMAGE_URI .
+          
+          # Also tag as latest
+          docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          # Push both tags
+          docker push $IMAGE_URI
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Image build summary
+        run: |
+          echo "✅ Docker image built and pushed successfully"
+          echo "📦 Image URI: ${{ steps.build-image.outputs.image }}"
+
+  # -------------------------------
+  # 2. Prepare Task Definition
+  # -------------------------------
+  prepare-task-definition:
+    name: Generate ECS Task Definition
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    outputs:
+      task-definition: ${{ steps.generate-task-def.outputs.task-definition }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get AWS Account ID
+        id: get-account
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account-id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+
+      - name: Generate Task Definition
+        id: generate-task-def
+        env:
+          ACCOUNT_ID: ${{ steps.get-account.outputs.account-id }}
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image }}
+        run: |
+          # Create task definition JSON
+          cat > task-definition.json << EOF
+          {
+            "family": "$ECS_SERVICE",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "1024",
+            "memory": "2048",
+            "executionRoleArn": "arn:aws:iam::$ACCOUNT_ID:role/ecsTaskExecutionRole-BookRecommendation",
+            "taskRoleArn": "arn:aws:iam::$ACCOUNT_ID:role/ecsTaskRole-BookRecommendation",
+            "containerDefinitions": [
+              {
+                "name": "$CONTAINER_NAME",
+                "image": "$IMAGE_URI",
+                "essential": true,
+                "portMappings": [
+                  {
+                    "containerPort": 8000,
+                    "protocol": "tcp"
+                  }
+                ],
+                "environment": [
+                  {
+                    "name": "PYTHONUNBUFFERED",
+                    "value": "1"
+                  },
+                  {
+                    "name": "LOG_LEVEL",
+                    "value": "INFO"
+                  },
+                  {
+                    "name": "APP_ENV",
+                    "value": "production"
+                  }
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/$ECS_SERVICE",
+                    "awslogs-region": "$AWS_REGION",
+                    "awslogs-stream-prefix": "ecs",
+                    "awslogs-create-group": "true"
+                  }
+                },
+                "healthCheck": {
+                  "command": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:8000/ || exit 1"
+                  ],
+                  "interval": 30,
+                  "timeout": 5,
+                  "retries": 3,
+                  "startPeriod": 10
+                }
+              }
+            ]
+          }
+          EOF
+          
+          echo "task-definition=$(pwd)/task-definition.json" >> $GITHUB_OUTPUT
+
+      - name: Upload Task Definition
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-definition
+          path: task-definition.json
+
+  # -------------------------------
+  # 3. Deploy to ECS
+  # -------------------------------
+  deploy:
+    name: Deploy to ECS Fargate
+    needs: [build-and-push, prepare-task-definition]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download Task Definition
+        uses: actions/download-artifact@v4
+        with:
+          name: task-definition
+
+      - name: Create ECS Cluster if it doesn't exist
+        run: |
+          if ! aws ecs describe-clusters --clusters $ECS_CLUSTER --query 'clusters[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+            echo "Creating ECS cluster: $ECS_CLUSTER"
+            aws ecs create-cluster --cluster-name $ECS_CLUSTER
+          else
+            echo "ECS cluster $ECS_CLUSTER already exists"
+          fi
+
+      - name: Register Task Definition
+        id: register-task-def
+        run: |
+          TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://task-definition.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task-definition-arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
+          echo "✅ Task definition registered: $TASK_DEF_ARN"
+
+      - name: Check if ECS Service exists
+        id: check-service
+        run: |
+          if aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --query 'services[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+            echo "service-exists=true" >> $GITHUB_OUTPUT
+            echo "ECS service $ECS_SERVICE already exists"
+          else
+            echo "service-exists=false" >> $GITHUB_OUTPUT
+            echo "ECS service $ECS_SERVICE does not exist"
+          fi
+
+      - name: Update ECS Service
+        if: steps.check-service.outputs.service-exists == 'true'
+        run: |
+          echo "Updating existing ECS service..."
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --task-definition ${{ steps.register-task-def.outputs.task-definition-arn }} \
+            --desired-count 2
+
+      - name: Create ECS Service
+        if: steps.check-service.outputs.service-exists == 'false'
+        run: |
+          echo "Creating new ECS service..."
+          
+          # Get default VPC and subnets
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=is-default,Values=true" --query 'Vpcs[0].VpcId' --output text)
+          SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[0:2].SubnetId' --output text)
+          SUBNET_1=$(echo $SUBNET_IDS | cut -d' ' -f1)
+          SUBNET_2=$(echo $SUBNET_IDS | cut -d' ' -f2)
+          
+          # Create or get security group
+          SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=book-recommendation-sg" "Name=vpc-id,Values=$VPC_ID" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null)
+          
+          if [ "$SG_ID" = "None" ] || [ -z "$SG_ID" ]; then
+            echo "Creating security group..."
+            SG_ID=$(aws ec2 create-security-group --group-name book-recommendation-sg --description "Security group for Book Recommendation System" --vpc-id $VPC_ID --query 'GroupId' --output text)
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 8000 --cidr 0.0.0.0/0
+          fi
+          
+          # Create service
+          aws ecs create-service \
+            --cluster $ECS_CLUSTER \
+            --service-name $ECS_SERVICE \
+            --task-definition ${{ steps.register-task-def.outputs.task-definition-arn }} \
+            --desired-count 2 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_1,$SUBNET_2],securityGroups=[$SG_ID],assignPublicIp=ENABLED}"
+
+      - name: Wait for Service Stability
+        run: |
+          echo "Waiting for ECS service to become stable..."
+          aws ecs wait services-stable --cluster $ECS_CLUSTER --services $ECS_SERVICE
+          echo "✅ ECS service is stable"
+
+      - name: Get Service Information
+        run: |
+          echo "📋 Deployment Summary:"
+          echo "🔧 Cluster: $ECS_CLUSTER"
+          echo "🚀 Service: $ECS_SERVICE"
+          echo "📦 Image: ${{ needs.build-and-push.outputs.image }}"
+          echo "🌐 Region: $AWS_REGION"
+          
+          # Get task public IPs
+          TASK_ARNS=$(aws ecs list-tasks --cluster $ECS_CLUSTER --service-name $ECS_SERVICE --query 'taskArns' --output text)
+          if [ ! -z "$TASK_ARNS" ]; then
+            echo "🌍 Task Public IPs:"
+            for TASK_ARN in $TASK_ARNS; do
+              ENI_ID=$(aws ecs describe-tasks --cluster $ECS_CLUSTER --tasks $TASK_ARN --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text)
+              if [ ! -z "$ENI_ID" ] && [ "$ENI_ID" != "None" ]; then
+                PUBLIC_IP=$(aws ec2 describe-network-interfaces --network-interface-ids $ENI_ID --query 'NetworkInterfaces[0].Association.PublicIp' --output text 2>/dev/null)
+                if [ ! -z "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
+                  echo "  📍 http://$PUBLIC_IP:8000"
+                fi
+              fi
+            done
+          fi
+
+      - name: Deployment Complete
+        run: |
+          echo "🎉 Book Recommendation System deployed successfully to ECS Fargate!"
+          echo "🔍 Check the AWS ECS Console for detailed service information:"
+          echo "   https://$AWS_REGION.console.aws.amazon.com/ecs/home?region=$AWS_REGION#/clusters/$ECS_CLUSTER/services"
