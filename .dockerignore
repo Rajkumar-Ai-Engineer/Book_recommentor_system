@@ -1,0 +1,108 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache
+.pytype
+*.egg-info
+dist
+build
+*.egg
+.eggs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv
+venv
+ENV
+env
+.venv/
+
+# IDE and editors
+.vscode
+.idea
+.VS
+*.swp
+*.swo
+*~
+.DS_Store
+.sublime-project
+.sublime-workspace
+*.iml
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+Notebooks
+
+# Environment and configuration
+.env
+.env.local
+.env.*.local
+.aws/credentials
+.aws/config
+
+# Documentation
+README.md
+docs
+*.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+Jenkinsfile
+.circleci
+.travis.yml
+
+# Development and testing
+tests
+pytest.ini
+.pytest_cache
+test_*.py
+*_test.py
+conftest.py
+
+# Unnecessary files
+LICENSE
+CHANGELOG.md
+CONTRIBUTING.md
+.editorconfig
+.pre-commit-config.yaml
+tox.ini
+setup.cfg
+Makefile
+.dockerignore
+Dockerfile
+
+# Data and logs (development)
+logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# Node modules (if any frontend tools)
+node_modules
+npm-debug.log
+
+# Large files and unnecessary directories
+Notebooks
+others
+data_schema
+BookRecommentorSystemData

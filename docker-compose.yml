@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  book-recommendation:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - APP_ENV=development
+    volumes:
+      - ./logs:/app/logs
+      - ./Artifacts:/app/Artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+# For production testing with multiple replicas
+  book-recommendation-scaled:
+    build: .
+    ports:
+      - "8001-8003:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - APP_ENV=production
+    deploy:
+      replicas: 3
+    profiles:
+      - production-test
